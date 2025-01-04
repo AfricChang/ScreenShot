@@ -42,6 +42,11 @@ public class LocalizationService
             new("en-US"),
             new("zh-CN")
         };
+    }
+
+    public void InitializeResources()
+    {
+        if (Application.Current == null) return;
 
         // 加载当前语言的资源
         LoadResources(currentCulture);

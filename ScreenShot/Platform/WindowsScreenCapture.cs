@@ -4,31 +4,23 @@ using Avalonia.Platform;
 using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using SysDraw = System.Drawing;
+using System.IO;
+using System.Runtime.Versioning;
 
 namespace ScreenShot.Platform;
 
-public class WindowsScreenCapture : IScreenCapture
+[SupportedOSPlatform("windows6.1")]
+public class WindowsScreenCapture : IScreenCapture, IDisposable
 {
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
     [DllImport("gdi32.dll")]
     private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, uint dwRop);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateDC(string? lpszDriver, string? lpszDevice, string? lpszOutput, IntPtr lpInitData);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(IntPtr hObject);
 
     private const uint SRCCOPY = 0x00CC0020;
 
@@ -37,38 +29,94 @@ public class WindowsScreenCapture : IScreenCapture
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return null;
 
+        if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1))
+            return null;
+
         return await Task.Run(() =>
         {
-            IntPtr screenDC = CreateDC("DISPLAY", null, null, IntPtr.Zero);
-            IntPtr memoryDC = CreateCompatibleDC(screenDC);
-            IntPtr bitmap = CreateCompatibleBitmap(screenDC, (int)width, (int)height);
-            IntPtr oldBitmap = SelectObject(memoryDC, bitmap);
-
             try
             {
-                BitBlt(memoryDC, 0, 0, (int)width, (int)height, screenDC, (int)x, (int)y, SRCCOPY);
+                // 获取屏幕DC
+                IntPtr screenDC = GetDC(IntPtr.Zero);
+                if (screenDC == IntPtr.Zero)
+                    return null;
 
-                // 创建 WriteableBitmap
-                var writeableBitmap = new WriteableBitmap(new PixelSize((int)width, (int)height), 
-                    new Vector(96, 96), 
-                    PixelFormat.Bgra8888, 
-                    AlphaFormat.Premul);
-
-                using (var fb = writeableBitmap.Lock())
+                try
                 {
-                    // 从 GDI bitmap 复制数据到 WriteableBitmap
-                    BitBlt(memoryDC, 0, 0, (int)width, (int)height, (IntPtr)fb.Address, 0, 0, SRCCOPY);
-                }
+                    // 创建GDI+位图
+                    using var bitmap = new SysDraw.Bitmap((int)width, (int)height, SysDraw.Imaging.PixelFormat.Format32bppArgb);
+                    using (var graphics = SysDraw.Graphics.FromImage(bitmap))
+                    {
+                        var hdcBitmap = graphics.GetHdc();
+                        try
+                        {
+                            // 从屏幕复制到GDI+位图
+                            BitBlt(hdcBitmap, 0, 0, (int)width, (int)height, screenDC, (int)x, (int)y, SRCCOPY);
+                        }
+                        finally
+                        {
+                            graphics.ReleaseHdc(hdcBitmap);
+                        }
+                    }
 
-                return writeableBitmap;
+                    // 将GDI+位图转换为DIB格式
+                    var bitmapData = bitmap.LockBits(
+                        new SysDraw.Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                        SysDraw.Imaging.ImageLockMode.ReadOnly,
+                        SysDraw.Imaging.PixelFormat.Format32bppArgb);
+
+                    try
+                    {
+                        // 创建Avalonia位图
+                        var avalonBitmap = new WriteableBitmap(
+                            new PixelSize(bitmap.Width, bitmap.Height),
+                            new Vector(96, 96),
+                            PixelFormat.Bgra8888,
+                            AlphaFormat.Premul);
+
+                        using (var fb = avalonBitmap.Lock())
+                        {
+                            unsafe
+                            {
+                                var sourcePtr = (byte*)bitmapData.Scan0;
+                                var destPtr = (byte*)fb.Address;
+                                var stride = Math.Min(bitmapData.Stride, fb.RowBytes);
+                                var height = Math.Min(bitmap.Height, fb.Size.Height);
+
+                                for (int y = 0; y < height; y++)
+                                {
+                                    Buffer.MemoryCopy(
+                                        sourcePtr + y * bitmapData.Stride,
+                                        destPtr + y * fb.RowBytes,
+                                        stride,
+                                        stride);
+                                }
+                            }
+                        }
+
+                        return avalonBitmap;
+                    }
+                    finally
+                    {
+                        bitmap.UnlockBits(bitmapData);
+                    }
+                }
+                finally
+                {
+                    ReleaseDC(IntPtr.Zero, screenDC);
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                SelectObject(memoryDC, oldBitmap);
-                DeleteObject(bitmap);
-                DeleteDC(memoryDC);
-                DeleteDC(screenDC);
+                System.Diagnostics.Debug.WriteLine($"截图时出错: {ex}");
+                return null;
             }
         });
+    }
+
+    public void Dispose()
+    {
+        // 清理资源
+        GC.SuppressFinalize(this);
     }
 }

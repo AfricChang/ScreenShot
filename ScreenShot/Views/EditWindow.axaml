@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="clr-namespace:ScreenShot.Controls"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+        x:Class="ScreenShot.Views.EditWindow"
+        Title="编辑截图"
+        Width="800" Height="600"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        ShowInTaskbar="False"
+        ExtendClientAreaToDecorationsHint="True">
+    <Grid RowDefinitions="Auto,*">
+        <!-- 工具栏 -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10" Spacing="10">
+            <Button x:Name="ArrowButton" Content="箭头" />
+            <Button x:Name="TextButton" Content="文字" />
+            <Button x:Name="RectangleButton" Content="矩形" />
+            <Button x:Name="SaveButton" Content="保存" />
+            <Button x:Name="CopyButton" Content="复制" />
+            <Button x:Name="CloseButton" Content="关闭" />
+        </StackPanel>
+        
+        <!-- 编辑区域 -->
+        <controls:ScreenshotCanvas x:Name="Canvas" Grid.Row="1" Margin="10" />
+    </Grid>
+</Window>

@@ -3,10 +3,13 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
+using Avalonia.Interactivity;
 using ScreenShot.Models;
-using ScreenShot.Platform;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
 
 namespace ScreenShot.Controls;
 
@@ -17,12 +20,19 @@ public class ScreenshotCanvas : Canvas
     private readonly List<IDrawingElement> drawingElements = new();
     private readonly Image drawingImage;
 
+    public Bitmap? OriginalImage { get; set; }
+
     public ScreenshotCanvas()
     {
         DoubleTapped += OnDoubleTap;
         ClipToBounds = true;
 
-        drawingImage = new Image();
+        drawingImage = new Image
+        {
+            Stretch = Stretch.None,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+        };
         Children.Add(drawingImage);
     }
 
@@ -39,14 +49,14 @@ public class ScreenshotCanvas : Canvas
         set => SetAndRaise(DrawingColorProperty, ref drawingColor, value);
     }
 
-    public static readonly DirectProperty<ScreenshotCanvas, string> CurrentToolProperty =
-        AvaloniaProperty.RegisterDirect<ScreenshotCanvas, string>(
+    public static readonly DirectProperty<ScreenshotCanvas, DrawingTool> CurrentToolProperty =
+        AvaloniaProperty.RegisterDirect<ScreenshotCanvas, DrawingTool>(
             nameof(CurrentTool),
             o => o.CurrentTool,
             (o, v) => o.CurrentTool = v);
 
-    private string currentTool = "None";
-    public string CurrentTool
+    private DrawingTool currentTool = DrawingTool.None;
+    public DrawingTool CurrentTool
     {
         get => currentTool;
         set => SetAndRaise(CurrentToolProperty, ref currentTool, value);
@@ -59,7 +69,7 @@ public class ScreenshotCanvas : Canvas
 
         switch (CurrentTool)
         {
-            case "文字":
+            case DrawingTool.Text:
                 var textElement = new TextElement
                 {
                     Position = startPoint,
@@ -70,7 +80,7 @@ public class ScreenshotCanvas : Canvas
                 drawingElements.Add(textElement);
                 break;
 
-            case "箭头":
+            case DrawingTool.Arrow:
                 var arrowElement = new ArrowElement
                 {
                     Start = startPoint,
@@ -81,65 +91,81 @@ public class ScreenshotCanvas : Canvas
                 drawingElements.Add(arrowElement);
                 break;
 
-            case "圆形":
-                var ellipseElement = new EllipseElement
-                {
-                    Center = startPoint,
-                    RadiusX = 0,
-                    RadiusY = 0,
-                    Color = DrawingColor
-                };
-                currentElement = ellipseElement;
-                drawingElements.Add(ellipseElement);
-                break;
-
-            case "矩形":
+            case DrawingTool.Rectangle:
                 var rectangleElement = new RectangleElement
                 {
                     Bounds = new Rect(startPoint, startPoint),
-                    Color = DrawingColor
+                    Color = DrawingColor,
+                    StrokeThickness = 2
                 };
                 currentElement = rectangleElement;
                 drawingElements.Add(rectangleElement);
                 break;
         }
 
-        UpdateDrawing();
+        RedrawCanvas();
+    }
+
+    public async Task SaveToFileAsync(IStorageFile file)
+    {
+        if (OriginalImage == null) return;
+
+        using var stream = await file.OpenWriteAsync();
+        var pixelSize = OriginalImage.PixelSize;
+        var dpi = OriginalImage.Dpi;
+
+        using var renderBitmap = new RenderTargetBitmap(pixelSize, dpi);
+        using (var context = renderBitmap.CreateDrawingContext())
+        {
+            var rect = new Rect(0, 0, pixelSize.Width, pixelSize.Height);
+            context.DrawImage(OriginalImage, rect, rect);
+
+            foreach (var element in drawingElements)
+            {
+                element.Draw(context);
+            }
+        }
+
+        renderBitmap.Save(stream);
+    }
+
+    public async Task CopyToClipboardAsync()
+    {
+        if (OriginalImage == null) return;
+
+        var pixelSize = OriginalImage.PixelSize;
+        var dpi = OriginalImage.Dpi;
+
+        using var renderBitmap = new RenderTargetBitmap(pixelSize, dpi);
+        using (var context = renderBitmap.CreateDrawingContext())
+        {
+            var rect = new Rect(0, 0, pixelSize.Width, pixelSize.Height);
+            context.DrawImage(OriginalImage, rect, rect);
+
+            foreach (var element in drawingElements)
+            {
+                element.Draw(context);
+            }
+        }
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null)
+        {
+            var dataObject = new DataObject();
+            dataObject.Set("PNG", renderBitmap);
+            await clipboard.SetDataObjectAsync(dataObject);
+        }
     }
 
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (currentElement == null) return;
-
-        var currentPoint = e.GetPosition(this);
-
-        switch (currentElement)
+        if (currentElement != null)
         {
-            case ArrowElement arrow:
-                arrow.End = currentPoint;
-                break;
-
-            case EllipseElement ellipse:
-                var rx = Math.Abs(currentPoint.X - startPoint.X) / 2;
-                var ry = Math.Abs(currentPoint.Y - startPoint.Y) / 2;
-                ellipse.Center = new Point(
-                    startPoint.X + (currentPoint.X - startPoint.X) / 2,
-                    startPoint.Y + (currentPoint.Y - startPoint.Y) / 2);
-                ellipse.RadiusX = rx;
-                ellipse.RadiusY = ry;
-                break;
-
-            case RectangleElement rectangle:
-                var x = Math.Min(startPoint.X, currentPoint.X);
-                var y = Math.Min(startPoint.Y, currentPoint.Y);
-                var width = Math.Abs(currentPoint.X - startPoint.X);
-                var height = Math.Abs(currentPoint.Y - startPoint.Y);
-                rectangle.Bounds = new Rect(x, y, width, height);
-                break;
+            var currentPoint = e.GetPosition(this);
+            UpdateDrawing(currentPoint);
+            RedrawCanvas();
         }
-
-        UpdateDrawing();
     }
 
     protected override void OnPointerReleased(PointerReleasedEventArgs e)
@@ -148,36 +174,85 @@ public class ScreenshotCanvas : Canvas
         currentElement = null;
     }
 
-    private void UpdateDrawing()
+    private void UpdateDrawing(Point currentPoint)
     {
-        var renderTarget = new RenderTargetBitmap(new PixelSize((int)Width, (int)Height));
-        using (var context = renderTarget.CreateDrawingContext(true))
+        switch (currentElement)
         {
+            case ArrowElement arrow:
+                arrow.End = currentPoint;
+                break;
+            case RectangleElement rectangle:
+                rectangle.Bounds = new Rect(
+                    Math.Min(startPoint.X, currentPoint.X),
+                    Math.Min(startPoint.Y, currentPoint.Y),
+                    Math.Abs(currentPoint.X - startPoint.X),
+                    Math.Abs(currentPoint.Y - startPoint.Y));
+                break;
+        }
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == BoundsProperty)
+        {
+            RedrawCanvas();
+        }
+    }
+
+    protected override void OnLoaded(RoutedEventArgs e)
+    {
+        base.OnLoaded(e);
+        RedrawCanvas();
+    }
+
+    private void RedrawCanvas()
+    {
+        if (OriginalImage == null) return;
+
+        var pixelSize = OriginalImage.PixelSize;
+        var dpi = OriginalImage.Dpi;
+
+        using var renderBitmap = new RenderTargetBitmap(pixelSize, dpi);
+        using (var context = renderBitmap.CreateDrawingContext())
+        {
+            var rect = new Rect(0, 0, pixelSize.Width, pixelSize.Height);
+            context.DrawImage(OriginalImage, rect, rect);
+
             foreach (var element in drawingElements)
             {
                 element.Draw(context);
             }
         }
-        drawingImage.Source = renderTarget;
+
+        drawingImage.Source = renderBitmap;
     }
 
     protected void OnDoubleTap(object? sender, TappedEventArgs e)
     {
-        if (CurrentTool != "文字") return;
+        if (CurrentTool != DrawingTool.Text) return;
 
         var position = e.GetPosition(this);
-        var textElement = drawingElements.Find(el => el is TextElement text && text.Contains(position)) as TextElement;
+        var textElement = drawingElements.Find(el => el is TextElement text &&
+            text.Contains(position)) as TextElement;
 
         if (textElement != null)
         {
-            // 在这里实现文本编辑逻辑
-            // 可以弹出一个对话框让用户输入文字
+            // TODO: 弹出文本编辑对话框
         }
     }
 
     public void ClearDrawings()
     {
         drawingElements.Clear();
-        UpdateDrawing();
+        RedrawCanvas();
+    }
+
+    public void SetImage(Bitmap image)
+    {
+        OriginalImage = image;
+        Width = image.PixelSize.Width;
+        Height = image.PixelSize.Height;
+        RedrawCanvas();
     }
 }

@@ -1,12 +1,14 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using ScreenShot.Services;
 using ScreenShot.ViewModels;
 using ScreenShot.Views;
+using System;
+using System.Runtime.Versioning;
 
 namespace ScreenShot;
 
+[SupportedOSPlatform("windows6.1")]
 public partial class App : Application
 {
     public override void Initialize()
@@ -16,16 +18,23 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // 初始化本地化服务
-        var settings = SettingsService.Instance.CurrentSettings;
-        LocalizationService.Instance.SetLanguage(settings.Language);
-
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        try
         {
-            desktop.MainWindow = new MainWindow
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                DataContext = new MainWindowViewModel(),
-            };
+                var mainWindow = new MainWindow
+                {
+                    DataContext = new MainWindowViewModel()
+                };
+
+                desktop.MainWindow = mainWindow;
+                desktop.MainWindow.Show();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"应用程序初始化时出错: {ex}");
+            throw;
         }
 
         base.OnFrameworkInitializationCompleted();

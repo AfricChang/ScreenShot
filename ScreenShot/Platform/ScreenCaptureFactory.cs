@@ -1,8 +1,10 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 namespace ScreenShot.Platform;
 
+[SupportedOSPlatform("windows6.1")]
 public static class ScreenCaptureFactory
 {
     public static IScreenCapture Create()
