@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using ScreenShot.Platform;
 using ScreenShot.ViewModels;
 using ScreenShot.Views;
 using System;
@@ -22,9 +23,10 @@ public partial class App : Application
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
+                var screenshotService = new WindowsScreenshotService();
                 var mainWindow = new MainWindow
                 {
-                    DataContext = new MainWindowViewModel()
+                    DataContext = new MainWindowViewModel(screenshotService)
                 };
 
                 desktop.MainWindow = mainWindow;
