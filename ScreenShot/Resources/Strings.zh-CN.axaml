@@ -1,0 +1,23 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=System.Runtime">
+    
+    <!-- 主窗口 -->
+    <system:String x:Key="MainWindow.Title">截图工具</system:String>
+    <system:String x:Key="MainWindow.Capture">截图</system:String>
+    <system:String x:Key="MainWindow.ConfigureHotkey">设置快捷键</system:String>
+    
+    <!-- 设置 -->
+    <system:String x:Key="Settings.Title">设置</system:String>
+    <system:String x:Key="Settings.Language">语言</system:String>
+    <system:String x:Key="Settings.Language.English">English</system:String>
+    <system:String x:Key="Settings.Language.Chinese">中文</system:String>
+    <system:String x:Key="Settings.Hotkey">快捷键</system:String>
+    <system:String x:Key="Settings.Save">保存</system:String>
+    <system:String x:Key="Settings.Cancel">取消</system:String>
+    
+    <!-- 消息 -->
+    <system:String x:Key="Message.SaveSuccess">保存成功</system:String>
+    <system:String x:Key="Message.SaveFailed">保存失败</system:String>
+    <system:String x:Key="Message.RestartRequired">需要重启应用以应用更改</system:String>
+</ResourceDictionary>
